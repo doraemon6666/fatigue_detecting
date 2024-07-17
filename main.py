@@ -109,8 +109,12 @@ def mouth_aspect_ratio(mouth):# 嘴部
 # 定义常数
 # 眼睛长宽比
 # 闪烁阈值
-EYE_AR_THRESH = 0.2
+EYE_AR_THRESH = 0.35
 EYE_AR_CONSEC_FRAMES = 3
+# TODO Threshold for alerting if eyes are closed for more than this many seconds
+EYE_CLOSED_SECONDS_THRESHOLD = 2  
+# TODO Variable to keep track of the time when eyes were last detected closed
+last_blink_time = time.time() 
 # 打哈欠长宽比
 # 闪烁阈值
 MAR_THRESH = 0.5
@@ -133,7 +137,7 @@ print("[INFO] loading facial landmark predictor...")
 # 第一步：使用dlib.get_frontal_face_detector() 获得脸部位置检测器
 detector = dlib.get_frontal_face_detector()
 # 第二步：使用dlib.shape_predictor获得脸部特征位置检测器
-predictor = dlib.shape_predictor('D:/myworkspace/JupyterNotebook/fatigue_detecting/model/shape_predictor_68_face_landmarks.dat')
+predictor = dlib.shape_predictor('/Users/xuechixue/Desktop/graduate_project/fatigue_detecting/model/shape_predictor_68_face_landmarks.dat')
  
 # 第三步：分别获取左右眼面部标志的索引
 (lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
@@ -142,15 +146,33 @@ predictor = dlib.shape_predictor('D:/myworkspace/JupyterNotebook/fatigue_detecti
 
 # 第四步：打开cv2 本地摄像头
 cap = cv2.VideoCapture(0)
+
+# 检查视频捕获是否成功
+if not cap.isOpened():
+    print("Error: Could not open video capture")
+    exit()
  
 # 从视频流循环帧
 while True:
     # 第五步：进行循环，读取图片，并对图片做维度扩大，并进灰度化
     ret, frame = cap.read()
+    
+    if not ret:
+        print("Failed to grab frame")
+        break
+    # 打印 frame 的类型和深度
+    print(f"Frame dtype: {frame.dtype}, shape: {frame.shape}")
+
     frame = imutils.resize(frame, width=720)
+
+    # 打印调整大小后的 frame 的类型和深度
+    print(f"Resized frame dtype: {frame.dtype}, shape: {frame.shape}")
+   
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+     # 检查图像类型和深度
+    print(f"Gray image dtype: {gray.dtype}, shape: {gray.shape}")
     # 第六步：使用detector(gray, 0) 进行脸部位置检测
-    rects = detector(gray, 0)
+    rects = detector(gray, 1)
     
     # 第七步：循环脸部位置信息，使用predictor(gray, rect)获得脸部特征位置的信息
     for rect in rects:
@@ -169,6 +191,23 @@ while True:
         leftEAR = eye_aspect_ratio(leftEye)
         rightEAR = eye_aspect_ratio(rightEye)
         ear = (leftEAR + rightEAR) / 2.0
+        # TODO Check if eyes are closed based on EAR threshold
+        eye_closed = ear < EYE_AR_THRESH  
+          # If eyes are closed, increment the frames counter
+        if eye_closed:
+            COUNTER += 1
+            # Check if eyes have been closed for more than the threshold
+            if COUNTER >= EYE_AR_CONSEC_FRAMES:
+                current_time = time.time()
+                # Calculate how long eyes have been continuously closed
+                time_since_last_blink = current_time - last_blink_time
+                # If eyes have been closed for more than the threshold, display alert
+                if time_since_last_blink > EYE_CLOSED_SECONDS_THRESHOLD:
+                    cv2.putText(frame, "SLEEP!!!", (100, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
+                last_blink_time = current_time  # Update the last blink time
+                
+        else:
+            COUNTER = 0  # Reset the frames counter
         # 打哈欠
         mar = mouth_aspect_ratio(mouth)
  
@@ -241,7 +280,15 @@ while True:
         
         # 绘制正方体12轴
         for start, end in line_pairs:
-            cv2.line(frame, reprojectdst[start], reprojectdst[end], (0, 0, 255))
+            print(f"reprojectdst[start]: {reprojectdst[start]}")
+            print(f"reprojectdst[end]: {reprojectdst[end]}")
+
+            # 将点的坐标值转换为整数
+            pt1 = (int(reprojectdst[start][0]), int(reprojectdst[start][1]))
+            pt2 = (int(reprojectdst[end][0]), int(reprojectdst[end][1]))
+
+            # cv2.line(frame, reprojectdst[start], reprojectdst[end], (0, 0, 255))
+            cv2.line(frame, pt1, pt2, (0, 0, 255))
         # 显示角度结果
         cv2.putText(frame, "X: " + "{:7.2f}".format(euler_angle[0, 0]), (10, 90), cv2.FONT_HERSHEY_SIMPLEX,0.75, (0, 255, 0), thickness=2)# GREEN
         cv2.putText(frame, "Y: " + "{:7.2f}".format(euler_angle[1, 0]), (150, 90), cv2.FONT_HERSHEY_SIMPLEX,0.75, (255, 0, 0), thickness=2)# BLUE
@@ -252,9 +299,8 @@ while True:
         # 第十六步：进行画图操作，68个特征点标识
         for (x, y) in shape:
             cv2.circle(frame, (x, y), 1, (0, 0, 255), -1)
-
-    print('嘴巴实时长宽比:{:.2f} '.format(mar)+"\t是否张嘴："+str([False,True][mar > MAR_THRESH]))
-    print('眼睛实时长宽比:{:.2f} '.format(ear)+"\t是否眨眼："+str([False,True][COUNTER>=1]))
+            print('嘴巴实时长宽比:{:.2f} '.format(mar)+"\t是否张嘴："+str([False,True][mar > MAR_THRESH]))
+            print('眼睛实时长宽比:{:.2f} '.format(ear)+"\t是否眨眼："+str([False,True][COUNTER>=1]))
     
     # 确定疲劳提示:眨眼50次，打哈欠15次，瞌睡点头15次
     if TOTAL >= 50 or mTOTAL>=15 or hTOTAL>=15:
