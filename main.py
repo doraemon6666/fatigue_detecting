@@ -109,7 +109,7 @@ def mouth_aspect_ratio(mouth):# 嘴部
 # 定义常数
 # 眼睛长宽比
 # 闪烁阈值
-EYE_AR_THRESH = 0.35
+EYE_AR_THRESH = 0.3
 EYE_AR_CONSEC_FRAMES = 3
 # TODO Threshold for alerting if eyes are closed for more than this many seconds
 EYE_CLOSED_SECONDS_THRESHOLD = 2  
